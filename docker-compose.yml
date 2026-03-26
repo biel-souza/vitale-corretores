@@ -16,6 +16,7 @@ services:
       DB_NAME: ${DB_NAME}
     networks:
       - n8n_default
+      - web
     labels:
       - "traefik.enable=true"
       # HTTP Router (porta 80 para validação Let's Encrypt)
@@ -33,4 +34,6 @@ services:
 
 networks:
   n8n_default:
+    external: true
+  web:
     external: true
