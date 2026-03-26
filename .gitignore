@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.docker
+.env.production
+.DS_Store
+backups/
+*.sql
+*.sql.gz
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
