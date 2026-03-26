@@ -25,7 +25,7 @@ services:
       # HTTPS Router (porta 443)
       - "traefik.http.routers.vitale.rule=Host(`vitale.h-talks.com.br`)"
       - "traefik.http.routers.vitale.entrypoints=websecure"
-      - "traefik.http.routers.vitale.tls.certresolver=leresolver"
+      - "traefik.http.routers.vitale.tls.certresolver=mytlschallenge"
       # Middleware de redirecionamento HTTP -> HTTPS
       - "traefik.http.middlewares.vitale-redirect.redirectscheme.scheme=https"
       # Load Balancer
