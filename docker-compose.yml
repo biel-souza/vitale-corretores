@@ -19,6 +19,7 @@ services:
       - web
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=web"
       # HTTP Router (porta 80 para validação Let's Encrypt)
       - "traefik.http.routers.vitale-http.rule=Host(`vitale.h-talks.com.br`)"
       - "traefik.http.routers.vitale-http.entrypoints=web"
