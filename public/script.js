@@ -1,5 +1,5 @@
-// URL base da API (ajuste se necessário)
-const API_URL = "http://localhost:3000/api";
+// URL base da API (usa caminho relativo para funcionar em qualquer domínio)
+const API_URL = "/api";
 
 // Elementos do DOM
 const formCadastro = document.getElementById("formCadastro");
