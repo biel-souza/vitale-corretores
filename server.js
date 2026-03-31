@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const axios = require("axios");
 const { pool, initDatabase } = require("./database");
 require("dotenv").config();
 
@@ -55,10 +56,20 @@ app.get("/api/corretores", async (req, res) => {
   }
 });
 
-// 3. Obter próximo corretor da fila (para N8N)
+// 3. Obter próximo corretor da fila e atribuir no Chatwoot (para N8N)
 // Retorna o corretor que está há mais tempo sem atender um imóvel
-app.get("/api/fila/proximo", async (req, res) => {
+// e faz o assignment na conversa do Chatwoot
+app.post("/api/fila/proximo", async (req, res) => {
   try {
+    const { conversation_id, account_id, cliente_nome } = req.body;
+
+    // Validar parâmetros obrigatórios
+    if (!conversation_id || !account_id || !cliente_nome) {
+      return res.status(400).json({
+        erro: "conversation_id, account_id e cliente_nome são obrigatórios",
+      });
+    }
+
     // Buscar corretor ativo com ultimo_imovel mais antigo (ou NULL)
     const result = await pool.query(`
       SELECT * FROM corretores 
@@ -77,17 +88,107 @@ app.get("/api/fila/proximo", async (req, res) => {
 
     const corretor = result.rows[0];
 
+    // Chamar API do Chatwoot para fazer o assignment
+    const chatwootUrl = `${process.env.CHATWOOT_API_URL}/accounts/${account_id}/conversations/${conversation_id}/assignments`;
+
+    try {
+      await axios.post(
+        chatwootUrl,
+        {},
+        {
+          headers: {
+            api_access_token: process.env.CHATWOOT_API_TOKEN,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    } catch (chatwootError) {
+      console.error(
+        "Erro ao chamar API do Chatwoot:",
+        chatwootError.response?.data || chatwootError.message,
+      );
+
+      return res.status(500).json({
+        erro: "Erro ao atribuir conversa no Chatwoot",
+        detalhes: chatwootError.response?.data || chatwootError.message,
+      });
+    }
+
     // Atualizar ultimo_imovel para agora
     await pool.query(
       "UPDATE corretores SET ultimo_imovel = CURRENT_TIMESTAMP WHERE id = $1",
       [corretor.id],
     );
 
+    // Construir URL da conversa no Chatwoot
+    const chatwootConversationUrl = `${process.env.CHATWOOT_BASE_URL}/app/accounts/${account_id}/conversations/${conversation_id}`;
+
+    // Enviar mensagem WhatsApp para o corretor via template (API Oficial)
+    try {
+      const whatsappUrl = `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+
+      // Formatar telefone brasileiro (remover caracteres especiais)
+      const telefoneFormatado = corretor.telefone.replace(/\D/g, "");
+      const telefoneCompleto = telefoneFormatado.startsWith("55")
+        ? telefoneFormatado
+        : `55${telefoneFormatado}`;
+
+      await axios.post(
+        whatsappUrl,
+        {
+          messaging_product: "whatsapp",
+          to: telefoneCompleto,
+          type: "template",
+          template: {
+            name: process.env.WHATSAPP_TEMPLATE_NAME,
+            language: {
+              code: "pt_BR",
+            },
+            components: [
+              {
+                type: "body",
+                parameters: [
+                  {
+                    type: "text",
+                    text: cliente_nome,
+                  },
+                  {
+                    type: "text",
+                    text: chatwootConversationUrl,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      console.log(
+        `WhatsApp enviado para ${corretor.nome} (${corretor.telefone})`,
+      );
+    } catch (whatsappError) {
+      console.error(
+        "Erro ao enviar WhatsApp:",
+        whatsappError.response?.data || whatsappError.message,
+      );
+      // Não retornar erro aqui, apenas logar, pois o assignment já foi feito
+    }
+
     res.json({
       id: corretor.id,
       nome: corretor.nome,
       telefone: corretor.telefone,
-      mensagem: "Próximo corretor da fila",
+      conversation_id: conversation_id,
+      account_id: account_id,
+      conversation_url: chatwootConversationUrl,
+      mensagem:
+        "Próximo corretor da fila atribuído com sucesso e notificado via WhatsApp",
     });
   } catch (error) {
     console.error("Erro ao buscar próximo corretor:", error);

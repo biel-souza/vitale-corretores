@@ -7,8 +7,11 @@ Sistema completo para gerenciamento de fila de corretores integrado com N8N.
 - ✅ Cadastro de corretores (nome e telefone)
 - 📊 Sistema de fila baseado em data do último atendimento
 - 🔄 Rota automática para N8N buscar próximo corretor
+- � Integração com Chatwoot (assignment automático)
+- 📱 Notificação automática via WhatsApp para o corretor
+- 🔗 Envio de template personalizado com nome do cliente e link da conversa
 - 👥 Gerenciamento de corretores (ativar/desativar)
-- 📱 Interface web responsiva e moderna
+- 🖥️ Interface web responsiva e moderna
 - 🎨 Design clean e intuitivo
 
 ## 🚀 Como Instalar
@@ -48,7 +51,27 @@ DB_PORT=5432
 DB_USER=seu_usuario
 DB_PASSWORD=sua_senha
 DB_NAME=vitale_corretores
+
+# Chatwoot API
+CHATWOOT_API_URL=https://app.h-talks.com.br/api/v1
+CHATWOOT_API_TOKEN=seu_token_api_chatwoot
+CHATWOOT_BASE_URL=https://app.h-talks.com.br
+
+# WhatsApp API Oficial (Cloud API)
+WHATSAPP_API_VERSION=v18.0
+WHATSAPP_PHONE_NUMBER_ID=seu_phone_number_id
+WHATSAPP_ACCESS_TOKEN=seu_access_token_permanente
+WHATSAPP_TEMPLATE_NAME=nome_do_template
 ```
+
+**Como obter as credenciais do WhatsApp:**
+
+1. Acesse [Meta for Developers](https://developers.facebook.com/)
+2. Crie um App WhatsApp Business
+3. Em WhatsApp > API Setup:
+   - **Phone Number ID**: ID do número de telefone
+   - **Access Token**: Gere um token permanente
+4. Configure seu template no WhatsApp Business Manager
 
 #### Para produção com Docker (.env.docker):
 
@@ -109,19 +132,38 @@ GET /api/corretores
 ### 3. Obter Próximo Corretor da Fila (para N8N)
 
 ```
-GET /api/fila/proximo
+POST /api/fila/proximo
+Content-Type: application/json
+
+{
+  "conversation_id": 123,
+  "account_id": 1,
+  "cliente_nome": "João Silva"
+}
 ```
 
 **Resposta:**
 
 ```json
 {
-  "id": 1,
-  "nome": "João Silva",
-  "telefone": "(11) 98765-4321",
-  "mensagem": "Próximo corretor da fila"
+  "id": 5,
+  "nome": "Maria Corretora",
+  "telefone": "11999999999",
+  "conversation_id": 123,
+  "account_id": 1,
+  "conversation_url": "https://app.h-talks.com.br/app/accounts/1/conversations/123",
+  "mensagem": "Próximo corretor da fila atribuído com sucesso e notificado via WhatsApp"
 }
 ```
+
+**O que esta rota faz:**
+
+1. Busca o próximo corretor disponível na fila
+2. Faz o assignment da conversa no Chatwoot
+3. Envia mensagem WhatsApp para o corretor com:
+   - Nome do cliente
+   - Link direto para a conversa no Chatwoot
+4. Atualiza o campo `ultimo_imovel` do corretor, colocando-o no final da fila
 
 **IMPORTANTE:** Esta rota automaticamente atualiza o campo `ultimo_imovel` do corretor para a data/hora atual, colocando-o no final da fila.
 
@@ -156,21 +198,79 @@ Para integrar com o N8N, use um nó HTTP Request:
 
 **Configuração:**
 
-- Method: GET
+- Method: **POST**
 - URL: `http://localhost:3000/api/fila/proximo`
+- Body Type: JSON
+- Body Content:
+
+```json
+{
+  "conversation_id": {{ $('Webhook').item.json.body.conversation.id }},
+  "account_id": {{ $('Webhook').item.json.body.account.id }},
+  "cliente_nome": "{{ $('Webhook').item.json.body.sender.name }}"
+}
+```
 
 O N8N receberá:
 
 ```json
 {
-  "id": 1,
-  "nome": "João Silva",
-  "telefone": "(11) 98765-4321",
-  "mensagem": "Próximo corretor da fila"
+  "id": 5,
+  "nome": "Maria Corretora",
+  "telefone": "11999999999",
+  "conversation_id": 123,
+  "account_id": 1,
+  "conversation_url": "https://app.h-talks.com.br/app/accounts/1/conversations/123",
+  "mensagem": "Próximo corretor da fila atribuído com sucesso e notificado via WhatsApp"
 }
 ```
 
-Use `{{ $json.telefone }}` para acessar o telefone do corretor na mensagem.
+Use `{{ $json.nome }}` e `{{ $json.telefone }}` para acessar os dados do corretor nas próximas etapas.
+
+### 📱 Configuração do Template WhatsApp
+
+O sistema usa a **API oficial do WhatsApp Cloud API** para enviar notificações.
+
+**Configuração necessária:**
+
+1. **Criar conta no Meta for Developers**
+   - Acesse: https://developers.facebook.com/
+   - Crie um App do tipo "Business"
+
+2. **Configurar WhatsApp Business API**
+   - Adicione o produto "WhatsApp"
+   - Configure um número de telefone
+   - Anote o **Phone Number ID** (encontrado em API Setup)
+
+3. **Gerar Access Token Permanente**
+   - Em API Setup, gere um token temporário
+   - Use [este guia](https://developers.facebook.com/docs/whatsapp/business-management-api/get-started#1--acquire-an-access-token-using-a-system-user-or-facebook-login) para criar um token permanente
+   - Salve o token de forma segura
+
+4. **Criar Template de Mensagem**
+   - Acesse WhatsApp Manager: https://business.facebook.com/wa/manage/message-templates/
+   - Crie um template com 2 parâmetros:
+     - `{{1}}` - Nome do cliente
+     - `{{2}}` - URL da conversa
+   - Exemplo: "Olá! Novo atendimento de _{{1}}_. Acesse: {{2}}"
+   - Aguarde aprovação (24-48h)
+
+**Exemplo de template:**
+
+```
+Olá! 👋
+
+Você tem um novo atendimento!
+
+*Cliente:* {{1}}
+
+Acesse a conversa:
+{{2}}
+
+Responda o mais rápido possível! 🏠
+```
+
+**📖 Guia Completo:** Veja [WHATSAPP_CONFIG.md](WHATSAPP_CONFIG.md) para instruções detalhadas de configuração.
 
 ## 🎯 Lógica da Fila
 
