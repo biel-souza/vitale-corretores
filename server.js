@@ -91,10 +91,14 @@ app.post("/api/fila/proximo", async (req, res) => {
     // Chamar API do Chatwoot para fazer o assignment
     const chatwootUrl = `${process.env.CHATWOOT_API_URL}/accounts/${account_id}/conversations/${conversation_id}/assignments`;
 
+    console.log(chatwootUrl);
+
     try {
       await axios.post(
         chatwootUrl,
-        {},
+        {
+          assignee_id: 1,
+        },
         {
           headers: {
             api_access_token: process.env.CHATWOOT_API_TOKEN,
