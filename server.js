@@ -47,7 +47,7 @@ app.post("/api/corretores", async (req, res) => {
 app.get("/api/corretores", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT * FROM corretores WHERE ativo = true ORDER BY nome",
+      "SELECT * FROM corretores ORDER BY nome",
     );
     res.json(result.rows);
   } catch (error) {
@@ -211,7 +211,7 @@ app.get("/api/fila/status", async (req, res) => {
         ultimo_imovel,
         CASE 
           WHEN ultimo_imovel IS NULL THEN 'Nunca atendeu'
-          ELSE to_char(ultimo_imovel, 'DD/MM/YYYY HH24:MI')
+          ELSE to_char(ultimo_imovel AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo', 'DD/MM/YYYY HH24:MI')
         END as ultimo_atendimento
       FROM corretores 
       WHERE ativo = true 
