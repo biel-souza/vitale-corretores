@@ -7,6 +7,25 @@ require("dotenv").config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Rate limiting: armazena último acesso por conversation_id
+const conversationRateLimit = new Map();
+const RATE_LIMIT_MINUTES = 1;
+
+// Limpar conversation_ids antigos do rate limiter (a cada 10 minutos)
+setInterval(
+  () => {
+    const now = Date.now();
+    const expirationTime = 10 * 60 * 1000; // 10 minutos em ms
+
+    for (const [conversationId, timestamp] of conversationRateLimit.entries()) {
+      if (now - timestamp > expirationTime) {
+        conversationRateLimit.delete(conversationId);
+      }
+    }
+  },
+  10 * 60 * 1000,
+);
+
 // Middlewares
 app.use(cors());
 app.use(express.json());
@@ -46,9 +65,7 @@ app.post("/api/corretores", async (req, res) => {
 // 2. Listar todos os corretores
 app.get("/api/corretores", async (req, res) => {
   try {
-    const result = await pool.query(
-      "SELECT * FROM corretores ORDER BY nome",
-    );
+    const result = await pool.query("SELECT * FROM corretores ORDER BY nome");
     res.json(result.rows);
   } catch (error) {
     console.error("Erro ao listar corretores:", error);
@@ -70,6 +87,30 @@ app.post("/api/fila/proximo", async (req, res) => {
       });
     }
 
+    // Verificar rate limiting por conversation_id
+    const now = Date.now();
+    const lastAccess = conversationRateLimit.get(conversation_id);
+
+    if (lastAccess) {
+      const minutesSinceLastAccess = (now - lastAccess) / (1000 * 60);
+
+      if (minutesSinceLastAccess < RATE_LIMIT_MINUTES) {
+        const secondsRemaining = Math.ceil(
+          RATE_LIMIT_MINUTES * 60 - minutesSinceLastAccess * 60,
+        );
+        console.log(
+          `Rate limit: conversa ${conversation_id} já processada há ${Math.floor(minutesSinceLastAccess * 60)}s. Aguardar ${secondsRemaining}s.`,
+        );
+        return res.json({
+          conversation_id: conversation_id,
+          account_id: account_id,
+          mensagem:
+            "Conversa já foi processada recentemente. Nenhuma ação adicional necessária.",
+          rate_limited: true,
+        });
+      }
+    }
+
     // Buscar corretor ativo com ultimo_imovel mais antigo (ou NULL)
     const result = await pool.query(`
       SELECT * FROM corretores 
@@ -87,6 +128,9 @@ app.post("/api/fila/proximo", async (req, res) => {
     }
 
     const corretor = result.rows[0];
+
+    // Registrar acesso no rate limiter
+    conversationRateLimit.set(conversation_id, now);
 
     // Chamar API do Chatwoot para fazer o assignment
     const chatwootUrl = `${process.env.CHATWOOT_API_URL}/accounts/${account_id}/conversations/${conversation_id}/assignments`;
