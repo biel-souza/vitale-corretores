@@ -118,6 +118,31 @@ app.post("/api/fila/proximo", async (req, res) => {
       });
     }
 
+    // Adicionar tag "negociação" à conversa
+    const chatwootLabelsUrl = `${process.env.CHATWOOT_API_URL}/accounts/${account_id}/conversations/${conversation_id}/labels`;
+
+    try {
+      await axios.post(
+        chatwootLabelsUrl,
+        {
+          labels: ["negociação"],
+        },
+        {
+          headers: {
+            api_access_token: process.env.CHATWOOT_API_TOKEN,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      console.log(`Tag "negociação" adicionada à conversa ${conversation_id}`);
+    } catch (labelError) {
+      console.error(
+        "Erro ao adicionar tag no Chatwoot:",
+        labelError.response?.data || labelError.message,
+      );
+      // Não retornar erro aqui, apenas logar, pois o assignment já foi feito
+    }
+
     // Atualizar ultimo_imovel para agora
     await pool.query(
       "UPDATE corretores SET ultimo_imovel = CURRENT_TIMESTAMP WHERE id = $1",
