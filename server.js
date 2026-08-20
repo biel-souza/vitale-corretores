@@ -73,9 +73,9 @@ app.get("/api/corretores", async (req, res) => {
   }
 });
 
-// 3. Obter próximo corretor da fila e atribuir no Chatwoot (para N8N)
-// Retorna o corretor que está há mais tempo sem atender um imóvel
-// e faz o assignment na conversa do Chatwoot
+// 3. Obter próximo corretor da fila e notificá-lo (para N8N)
+// Retorna o corretor que está há mais tempo sem atender um imóvel,
+// adiciona a tag na conversa do Chatwoot e avisa o corretor via WhatsApp
 app.post("/api/fila/proximo", async (req, res) => {
   try {
     const { conversation_id, account_id, cliente_nome } = req.body;
@@ -132,36 +132,6 @@ app.post("/api/fila/proximo", async (req, res) => {
     // Registrar acesso no rate limiter
     conversationRateLimit.set(conversation_id, now);
 
-    // Chamar API do Chatwoot para fazer o assignment
-    const chatwootUrl = `${process.env.CHATWOOT_API_URL}/accounts/${account_id}/conversations/${conversation_id}/assignments`;
-
-    console.log(chatwootUrl);
-
-    try {
-      await axios.post(
-        chatwootUrl,
-        {
-          assignee_id: 1,
-        },
-        {
-          headers: {
-            api_access_token: process.env.CHATWOOT_API_TOKEN,
-            "Content-Type": "application/json",
-          },
-        },
-      );
-    } catch (chatwootError) {
-      console.error(
-        "Erro ao chamar API do Chatwoot:",
-        chatwootError.response?.data || chatwootError.message,
-      );
-
-      return res.status(500).json({
-        erro: "Erro ao atribuir conversa no Chatwoot",
-        detalhes: chatwootError.response?.data || chatwootError.message,
-      });
-    }
-
     // Adicionar tag "negociação" à conversa
     const chatwootLabelsUrl = `${process.env.CHATWOOT_API_URL}/accounts/${account_id}/conversations/${conversation_id}/labels`;
 
@@ -184,7 +154,7 @@ app.post("/api/fila/proximo", async (req, res) => {
         "Erro ao adicionar tag no Chatwoot:",
         labelError.response?.data || labelError.message,
       );
-      // Não retornar erro aqui, apenas logar, pois o assignment já foi feito
+      // Não retornar erro aqui, apenas logar, pois o corretor já foi definido
     }
 
     // Atualizar ultimo_imovel para agora
@@ -250,7 +220,7 @@ app.post("/api/fila/proximo", async (req, res) => {
         "Erro ao enviar WhatsApp:",
         whatsappError.response?.data || whatsappError.message,
       );
-      // Não retornar erro aqui, apenas logar, pois o assignment já foi feito
+      // Não retornar erro aqui, apenas logar, pois o corretor já foi definido
     }
 
     res.json({
@@ -261,7 +231,7 @@ app.post("/api/fila/proximo", async (req, res) => {
       account_id: account_id,
       conversation_url: chatwootConversationUrl,
       mensagem:
-        "Próximo corretor da fila atribuído com sucesso e notificado via WhatsApp",
+        "Próximo corretor da fila definido e notificado via WhatsApp",
     });
   } catch (error) {
     console.error("Erro ao buscar próximo corretor:", error);
