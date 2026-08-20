@@ -7,20 +7,9 @@ services:
     restart: always
     expose:
       - "3000"
+    env_file: .env.docker
     environment:
       PORT: 3000
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_NAME: ${DB_NAME}
-      CHATWOOT_API_URL: ${CHATWOOT_API_URL}
-      CHATWOOT_API_TOKEN: ${CHATWOOT_API_TOKEN}
-      CHATWOOT_BASE_URL: ${CHATWOOT_BASE_URL}
-      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION}
-      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
-      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
-      WHATSAPP_TEMPLATE_NAME: ${WHATSAPP_TEMPLATE_NAME}
     networks:
       - n8n_default
       - web
