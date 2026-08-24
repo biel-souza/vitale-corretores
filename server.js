@@ -166,58 +166,78 @@ app.post("/api/fila/proximo", async (req, res) => {
     // Construir URL da conversa no Chatwoot
     const chatwootConversationUrl = `${process.env.CHATWOOT_BASE_URL}/app/accounts/${account_id}/conversations/${conversation_id}`;
 
-    // Enviar mensagem WhatsApp para o corretor via template (API Oficial)
+    // Enviar mensagem WhatsApp para o corretor via template, através do Chatwoot
+    // (usa a inbox WhatsApp já conectada no Chatwoot em vez de chamar a Meta direto)
     try {
-      const whatsappUrl = `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+      const chatwootHeaders = {
+        api_access_token: process.env.CHATWOOT_API_TOKEN,
+        "Content-Type": "application/json",
+      };
 
-      // Formatar telefone brasileiro (remover caracteres especiais)
+      // Formatar telefone brasileiro em E.164 (Chatwoot exige o "+")
       const telefoneFormatado = corretor.telefone.replace(/\D/g, "");
       const telefoneCompleto = telefoneFormatado.startsWith("55")
         ? telefoneFormatado
         : `55${telefoneFormatado}`;
+      const telefoneE164 = `+${telefoneCompleto}`;
 
+      // Buscar contato do corretor no Chatwoot pelo telefone
+      const searchResponse = await axios.get(
+        `${process.env.CHATWOOT_API_URL}/accounts/${account_id}/contacts/search`,
+        {
+          headers: chatwootHeaders,
+          params: { q: telefoneCompleto },
+        },
+      );
+
+      let contatoCorretor = searchResponse.data.payload.find(
+        (c) => c.phone_number === telefoneE164,
+      );
+
+      // Criar o contato (e a contact_inbox na inbox WhatsApp) se ainda não existir
+      if (!contatoCorretor) {
+        const createContactResponse = await axios.post(
+          `${process.env.CHATWOOT_API_URL}/accounts/${account_id}/contacts`,
+          {
+            name: corretor.nome,
+            phone_number: telefoneE164,
+            inbox_id: process.env.CHATWOOT_WHATSAPP_INBOX_ID,
+          },
+          { headers: chatwootHeaders },
+        );
+        contatoCorretor = createContactResponse.data.payload.contact;
+      }
+
+      // Criar a conversa e disparar o template aprovado no WhatsApp
       await axios.post(
-        whatsappUrl,
+        `${process.env.CHATWOOT_API_URL}/accounts/${account_id}/conversations`,
         {
-          messaging_product: "whatsapp",
-          to: telefoneCompleto,
-          type: "template",
-          template: {
-            name: process.env.WHATSAPP_TEMPLATE_NAME,
-            language: {
-              code: "pt_BR",
-            },
-            components: [
-              {
-                type: "body",
-                parameters: [
-                  {
-                    type: "text",
-                    text: cliente_nome,
-                  },
-                  {
-                    type: "text",
-                    text: chatwootConversationUrl,
-                  },
-                ],
+          contact_id: contatoCorretor.id,
+          inbox_id: process.env.CHATWOOT_WHATSAPP_INBOX_ID,
+          message: {
+            content_type: "text",
+            template_params: {
+              name: process.env.WHATSAPP_TEMPLATE_NAME,
+              category: "UTILITY",
+              language: "pt_BR",
+              processed_params: {
+                body: {
+                  1: cliente_nome,
+                  2: chatwootConversationUrl,
+                },
               },
-            ],
+            },
           },
         },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-          },
-        },
+        { headers: chatwootHeaders },
       );
 
       console.log(
-        `WhatsApp enviado para ${corretor.nome} (${corretor.telefone})`,
+        `WhatsApp enviado via Chatwoot para ${corretor.nome} (${corretor.telefone})`,
       );
     } catch (whatsappError) {
       console.error(
-        "Erro ao enviar WhatsApp:",
+        "Erro ao enviar WhatsApp via Chatwoot:",
         whatsappError.response?.data || whatsappError.message,
       );
       // Não retornar erro aqui, apenas logar, pois o corretor já foi definido
